@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sonic Playbox</title>
+  <!-- Disclaimer: This emulator is for educational purposes only. Please use legally obtained ROMs you own. -->
+  <!-- License: MIT License - See https://opensource.org/licenses/MIT for details. -->
+  <style>
+    body {
+      background-color: blue;
+      color: white;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      overflow-x: hidden;
+      min-width: 320px;
+    }
+    #container {
+      display: none;
+      margin: 0 auto;
+      max-width: 640px !important;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    canvas {
+      border: 2px solid white;
+      max-width: 100% !important;
+      max-height: 100vh !important;
+      width: 100% !important;
+      height: auto !important;
+      display: block;
+      object-fit: contain;
+    }
+    .gui_pleasewait_title {
+      font-size: 24px;
+      margin-top: 20px;
+    }
+    .pleasewait {
+      margin-top: 20px;
+    }
+    .lds-spinner {
+      display: inline-block;
+      position: relative;
+      width: 80px;
+      height: 80px;
+    }
+    .lds-spinner div {
+      transform-origin: 40px 40px;
+      animation: lds-spinner 1.2s linear infinite;
+    }
+    .lds-spinner div:after {
+      content: " ";
+      display: block;
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: white;
+      margin: -4px 0 0 -4px;
+    }
+    .lds-spinner div:nth-child(1) { animation-delay: -1.1s; transform: rotate(0deg); }
+    .lds-spinner div:nth-child(2) { animation-delay: -1.0s; transform: rotate(30deg); }
+    .lds-spinner div:nth-child(3) { animation-delay: -0.9s; transform: rotate(60deg); }
+    .lds-spinner div:nth-child(4) { animation-delay: -0.8s; transform: rotate(90deg); }
+    .lds-spinner div:nth-child(5) { animation-delay: -0.7s; transform: rotate(120deg); }
+    .lds-spinner div:nth-child(6) { animation-delay: -0.6s; transform: rotate(150deg); }
+    .lds-spinner div:nth-child(7) { animation-delay: -0.5s; transform: rotate(180deg); }
+    .lds-spinner div:nth-child(8) { animation-delay: -0.4s; transform: rotate(210deg); }
+    .lds-spinner div:nth-child(9) { animation-delay: -0.3s; transform: rotate(240deg); }
+    .lds-spinner div:nth-child(10) { animation-delay: -0.2s; transform: rotate(270deg); }
+    .lds-spinner div:nth-child(11) { animation-delay: -0.1s; transform: rotate(300deg); }
+    .lds-spinner div:nth-child(12) { animation-delay: 0s; transform: rotate(330deg); }
+    @keyframes lds-spinner {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .controls-hint {
+      margin-top: 10px;
+      font-size: 14px;
+      display: none;
+    }
+    #status {
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace; /* Improve readability */
+    }
+    select#console-select {
+      margin-top: 10px;
+      padding: 5px;
+    }
+    #resize-button, #test-button, #manual-test-button {
+      margin-top: 10px;
+      display: none;
+      padding: 5px 10px;
+      background-color: #1e90ff;
+      border: none;
+      color: white;
+      cursor: pointer;
+    }
+    #resize-button:hover, #test-button:hover, #manual-test-button:hover {
+      background-color: #4169e1;
+    }
+  </style>
+</head>
+<body>
+  <h1>Welcome to Sonic Playbox!</h1>
+  <p>Select console and upload a compatible ROM (.md, .bin, .gen for Genesis; .sms for Master System) to play. Use only legally owned ROMs!</p>
+  <select id="console-select">
+    <option value="genesis">Sega Genesis</option>
+    <option value="mastersystem">Master System</option>
+  </select>
+  <input type="file" id="rom-upload" accept=".md,.bin,.gen,.sms">
+  <div id="status" style="margin-top: 10px; white-space: pre-wrap;"></div>
+  <div class="gui_pleasewait_title">Starting Emulator...</div>
+  <div class="pleasewait">
+    <div class="lds-spinner"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+  </div>
+  <div id="container"><canvas id="canvas" width="640" height="480" oncontextmenu="event.preventDefault()"></canvas></div>
+  <div id="controls-hint" class="controls-hint"></div>
+  <button id="resize-button">Reset Canvas Size</button>
+  <button id="test-button">Test Inputs</button>
+  <button id="manual-test-button">Manual Test Input</button>
+
+  <script>
+    var container_width = 640;
+    var container_height = 480;
+    var settings_file = "";
+    var settings_Checker;
+    var loading_Checker;
+    var emulatorStarted = false;
+    window.Emulator_started = false;
+    window.Emulator_running = true;
+    var selectedConsole = "genesis"; // Default to Genesis
+    var manualTestKey = "a"; // Default key for manual test
+
+    // Predefine Module object for Emulatrix
+    if (typeof Module === "undefined") {
+      window.Module = {
+        preRun: [],
+        postRun: [],
+        canvas: document.getElementById("canvas"),
+        onRuntimeInitialized: function() {
+          updateStatus("Runtime initialized successfully!");
+          // Input event listeners
+          if (canvas.addEventListener) {
+            canvas.addEventListener("keydown", function(e) {
+              const key = e.key.toLowerCase();
+              console.log("Canvas keydown:", key, "code:", e.code, "for", selectedConsole);
+              updateStatus("Keydown detected: " + key + " (code: " + e.code + ")");
+              if (Module._setInput) {
+                const buttonMap = {
+                  ...(selectedConsole === "genesis" && {
+                    "a": 1, // A button
+                    "s": 2, // B button
+                    "d": 3, // C button
+                  }),
+                  ...(selectedConsole === "mastersystem" && {
+                    "a": 1, // Button 1
+                    "s": 2, // Button 2
+                  }),
+                  "enter": 9, // Start
+                  "f9": 10,  // Mute
+                  "f10": 11  // Reset
+                };
+                const button = buttonMap[key];
+                if (button) {
+                  Module._setInput(0, button); // Player 1, set button
+                  updateStatus("Input set: Player 1, Button " + button);
+                }
+              }
+            });
+            canvas.addEventListener("keyup", function(e) {
+              const key = e.key.toLowerCase();
+              console.log("Canvas keyup:", key, "code:", e.code, "for", selectedConsole);
+              updateStatus("Keyup detected: " + key + " (code: " + e.code + ")");
+              if (Module._setInput) {
+                Module._setInput(0, 0); // Reset input
+                updateStatus("Input reset: Player 1");
+              }
+            });
+            canvas.setAttribute("tabindex", "0"); // Make canvas focusable
+            canvas.focus(); // Focus canvas to capture keys
+          }
+        },
+        onAbort: function(error) {
+          updateStatus("Emulator aborted: " + error);
+        },
+        arguments: [],
+        print: function(text) { updateStatus("Emulatrix output: " + text); }, // Capture core logs
+        printErr: function(text) { updateStatus("Emulatrix error: " + text); } // Capture core errors
+      };
+    }
+
+    function updateStatus(message) {
+      const statusDiv = document.getElementById("status");
+      statusDiv.innerText += "\n" + message;
+      statusDiv.scrollTop = statusDiv.scrollHeight;
+      console.log(message);
+      if (message.includes("Emulator started!")) {
+        document.getElementById("controls-hint").style.display = "block";
+        document.getElementById("resize-button").style.display = "inline-block";
+        document.getElementById("test-button").style.display = "inline-block";
+        document.getElementById("manual-test-button").style.display = "inline-block";
+        updateControlHint(); // Update hint based on selected console
+      }
+    }
+
+    function updateControlHint() {
+      const hintDiv = document.getElementById("controls-hint");
+      switch (selectedConsole) {
+        case "genesis":
+          hintDiv.textContent = "Controls: Arrows to move, A/S/D for A/B/C, Enter for Start, F9 to mute, F10 to reset";
+          break;
+        case "mastersystem":
+          hintDiv.textContent = "Controls: Arrows to move, A for 1, S for 2, Enter for Start, F9 to mute, F10 to reset";
+          break;
+      }
+    }
+
+    window.onload = function() {
+      const consoleSelect = document.getElementById("console-select");
+      consoleSelect.addEventListener("change", function() {
+        selectedConsole = this.value;
+        updateStatus("Switched to " + selectedConsole + " console!");
+        updateControlHint(); // Update hint on console change
+      });
+
+      console.log("Initial Module:", typeof Module, "FS:", typeof FS);
+      updateStatus("Initializing Emulatrix for Sega Genesis and Master System (v1.0)...");
+    };
+
+    document.getElementById("rom-upload").onchange = function(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        const validExtensions = {
+          "genesis": ["md", "bin", "gen"],
+          "mastersystem": ["sms"]
+        };
+
+        if (!validExtensions[selectedConsole].includes(fileExtension)) {
+          updateStatus("Error: Incompatible ROM type! Use .md, .bin, or .gen for Genesis; .sms for Master System.");
+          event.target.value = ""; // Clear the file input
+          return;
+        }
+
+        updateStatus("File selected: " + file.name);
+        var fileReader = new FileReader();
+        fileReader.onload = function(e) {
+          updateStatus("File loaded: " + file.name + " (" + e.target.result.byteLength + " bytes)");
+          window.ROMDATA = new Uint8Array(e.target.result);
+          window.ROMNAME = file.name;
+          document.getElementById("container").style.display = "block";
+          waitForFS(loadRomIntoVD);
+        };
+        fileReader.onerror = function() {
+          updateStatus("Error reading file: " + file.name);
+        };
+        fileReader.readAsArrayBuffer(file);
+      } else {
+        updateStatus("No file chosen!");
+      }
+    };
+
+    function waitForFS(callback) {
+      if (typeof FS !== "undefined") {
+        updateStatus("Filesystem ready, loading ROM...");
+        callback();
+      } else {
+        updateStatus("Filesystem not ready, waiting...");
+        setTimeout(function() { waitForFS(callback); }, 500);
+      }
+    }
+
+    function loadRomIntoVD() {
+      updateStatus("Loading ROM into virtual drive...");
+      if (typeof FS === "undefined") {
+        updateStatus("Error: Filesystem not defined, aborting!");
+        return;
+      }
+      try {
+        const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
+        FS.createDataFile("/", romPath, new Uint8Array(window.ROMDATA), true, false);
+        FS.createFolder("/home/web_user", "retroarch", true, true);
+        FS.createFolder("/home/web_user/retroarch", "userdata", true, true);
+        updateStatus("Virtual files created for " + selectedConsole + "!");
+        console.log("Config file content:", settings_file); // Debug config
+      } catch (err) {
+        updateStatus("Error creating virtual files: " + err.message);
+        return;
+      }
+
+      settings_file = "rgui_browser_directory = /\n";
+      settings_file += "input_player1_start = enter\n";
+      if (selectedConsole === "genesis") {
+        settings_file += "input_player1_y = a\n"; // A button
+        settings_file += "input_player1_b = s\n"; // B button
+        settings_file += "input_player1_a = d\n"; // C button
+      } else if (selectedConsole === "mastersystem") {
+        settings_file += "input_player1_a = a\n"; // Button 1
+        settings_file += "input_player1_b = s\n"; // Button 2
+      }
+      settings_file += "input_audio_mute = f9\n";
+      settings_file += "input_reset = f10\n";
+      settings_file += "video_vsync = true\n";
+      settings_file += "audio_latency = 128\n";
+      settings_file += "video_message_pos_x = -100\n";
+      settings_file += "video_message_pos_y = -100\n";
+      settings_file += "menu_enable_widgets = false\n";
+
+      // Console-specific settings (Emulatrix may ignore these)
+      if (selectedConsole === "mastersystem") {
+        settings_file += "system_hw = Master System\n";
+      } else if (selectedConsole === "genesis") {
+        settings_file += "system_hw = Mega Drive/Genesis\n";
+      }
+
+      ["input_save_state", "input_load_state", "input_exit_emulator"].forEach(function(key) {
+        settings_file += key + " = scroll_lock\n";
+      });
+
+      container_width = document.getElementById("container").offsetWidth || 640;
+      container_height = Math.round((container_width / 4) * 3); // 4:3 aspect ratio
+      settings_file += "custom_viewport_width = " + container_width + "\n";
+      settings_file += "custom_viewport_height = " + container_height + "\n";
+      settings_file += "custom_viewport_x = 0\n";
+      settings_file += "custom_viewport_y = 0\n";
+
+      try {
+        FS.createDataFile("/home/web_user/retroarch/userdata", "retroarch.cfg", settings_file, true, true);
+        updateStatus("Configuration file created, checking integrity...");
+        settings_Checker = setInterval(checkSettingsFile, 1000);
+      } catch (err) {
+        updateStatus("Error creating config: " + err.message);
+      }
+    }
+
+    function checkSettingsFile() {
+      try {
+        var myTempFile = FS.readFile("/home/web_user/retroarch/userdata/retroarch.cfg");
+        if (myTempFile.length === settings_file.length) {
+          clearInterval(settings_Checker);
+          updateStatus("Configuration verified, starting emulator in 3s...");
+          setTimeout(startEmulator, 3000);
+        } else {
+          updateStatus("Configuration not ready, retrying...");
+        }
+      } catch (err) {
+        updateStatus("Error checking config: " + err.message);
+      }
+    }
+
+    function startEmulator() {
+      if (!emulatorStarted) {
+        updateStatus("Launching " + selectedConsole + " emulator...");
+        try {
+          console.log("Module before start:", Module);
+          if (Module.callMain) {
+            const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
+            Module.callMain(["-v", romPath]);
+          } else {
+            updateStatus("callMain not found, attempting auto-start...");
+          }
+          document.querySelector(".gui_pleasewait_title").style.display = "none";
+          document.querySelector(".pleasewait").style.display = "none";
+          document.getElementById("canvas").width = container_width;
+          document.getElementById("canvas").height = container_height;
+          setTimeout(function() {
+            resizeEmulatorCanvas();
+          }, 2000);
+          updateStatus("Emulator started! Enjoy " + selectedConsole + "!");
+          emulatorStarted = true;
+          loading_Checker = setInterval(loadingChecker, 500);
+        } catch (err) {
+          updateStatus("Error launching emulator: " + err.message);
+          setTimeout(function() {
+            resizeEmulatorCanvas();
+          }, 2000);
+        }
+      }
+    }
+
+    function resizeEmulatorCanvas() {
+      try {
+        container_width = Math.min(document.getElementById("container").offsetWidth || 640, window.innerWidth - 40);
+        container_height = Math.min(Math.round((container_width / 4) * 3) || 480, window.innerHeight - 100);
+        if (Module.setCanvasSize) {
+          Module.setCanvasSize(container_width, container_height, true);
+          document.getElementById("canvas").style.width = container_width + "px";
+          document.getElementById("canvas").style.height = container_height + "px";
+          updateStatus("Canvas resized to " + container_width + "x" + container_height);
+        }
+      } catch (err) {
+        updateStatus("Error resizing canvas: " + err.message);
+      }
+    }
+
+    function loadingChecker() {
+      try {
+        if (typeof Emulator_started !== "undefined" && Emulator_started === true) {
+          updateStatus("Emulator running confirmed!");
+          clearInterval(loading_Checker);
+          checkControls();
+        }
+      } catch (err) {
+        updateStatus("Error checking emulator status: " + err.message);
+      }
+    }
+
+    function checkControls() {
+      updateStatus("Setting up input controls...");
+      console.log("Setting up controls...");
+      try {
+        Emulator_soundEnabled = true;
+        updateControlHint(); // Update hint on emulator start
+        updateStatus("Controls ready for use!");
+      } catch (err) {
+        updateStatus("Error setting up controls: " + err.message);
+      }
+    }
+
+    function isMobileDevice() {
+      return /Mobi|Android/i.test(navigator.userAgent);
+    }
+
+    function testInputs() {
+      updateStatus("Testing inputs for " + selectedConsole + "...");
+      console.log("Testing inputs...");
+      try {
+        const events = [
+          { key: "ArrowUp", desc: "Up" },
+          { key: "ArrowDown", desc: "Down" },
+          { key: "ArrowLeft", desc: "Left" },
+          { key: "ArrowRight", desc: "Right" },
+          { key: selectedConsole === "genesis" ? "KeyA" : "KeyA", desc: "Button 1/A" },
+          { key: selectedConsole === "genesis" ? "KeyS" : "KeyS", desc: "Button 2/B" },
+          { key: selectedConsole === "genesis" ? "KeyD" : "Enter", desc: "Button 3/C or Start" },
+          { key: "F9", desc: "Mute" },
+          { key: "F10", desc: "Reset" },
+          { key: "F5", desc: "Fast-Forward" }
+        ];
+        events.forEach(event => {
+          const downEvent = new KeyboardEvent("keydown", { key: event.key, code: event.key.toUpperCase() });
+          const upEvent = new KeyboardEvent("keyup", { key: event.key, code: event.key.toUpperCase() });
+          document.dispatchEvent(downEvent);
+          setTimeout(() => {
+            document.dispatchEvent(upEvent);
+            updateStatus("Tested " + event.desc + " (" + event.key + ")");
+          }, 100);
+        });
+      } catch (err) {
+        updateStatus("Error testing inputs: " + err.message);
+      }
+    }
+
+    function manualTestInput() {
+      updateStatus("Manually testing input for key: " + manualTestKey + " on " + selectedConsole + "...");
+      console.log("Manually testing input:", manualTestKey);
+      try {
+        const downEvent = new KeyboardEvent("keydown", { key: manualTestKey, code: manualTestKey.toUpperCase() });
+        const upEvent = new KeyboardEvent("keyup", { key: manualTestKey, code: manualTestKey.toUpperCase() });
+        document.dispatchEvent(downEvent);
+        setTimeout(() => {
+          document.dispatchEvent(upEvent);
+          updateStatus("Tested " + manualTestKey);
+        }, 500);
+        // Prompt for next key to test
+        manualTestKey = prompt("Enter key to test (e.g., a, s, d, enter, f9, f10):", manualTestKey || "a");
+      } catch (err) {
+        updateStatus("Error testing manual input: " + err.message);
+      }
+    }
+
+    document.getElementById("resize-button").addEventListener("click", function() {
+      resizeEmulatorCanvas();
+      updateStatus("Canvas size reset to default!");
+    });
+
+    document.getElementById("test-button").addEventListener("click", function() {
+      testInputs();
+    });
+
+    document.getElementById("manual-test-button").addEventListener("click", function() {
+      manualTestInput();
+    });
+
+    window.addEventListener("resize", resizeEmulatorCanvas);
+    window.addEventListener("focus", function() { Emulator_running = true; });
+    window.addEventListener("blur", function() { Emulator_running = false; });
+
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+      updateStatus("Error encountered: " + msg + ". Retrying in 5 seconds...");
+      setTimeout(function() {
+        if (!emulatorStarted) {
+          document.getElementById("canvas").width = container_width;
+          document.getElementById("canvas").height = container_height;
+          if (Module.callMain) {
+            const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
+            Module.callMain(["-v", romPath]);
+            updateStatus("Retry successful, emulator relaunched!");
+            emulatorStarted = true;
+          }
+        }
+      }, 5000);
+      return true;
+    };
+  </script>
+  <script src="Emulatrix_SegaGenesis.js"></script>
+  <!-- Version 1.0 - Supports Sega Genesis and Master System. Add Game Gear or other systems with a multi-core update if needed. -->
+</body>
+</html>
