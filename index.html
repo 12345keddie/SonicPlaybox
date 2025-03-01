@@ -3,18 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <title>Sonic Playbox</title>
+  <!-- Import Permanent Marker font from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">
   <!-- Disclaimer: This emulator is for educational purposes only. Please use legally obtained ROMs you own. -->
   <!-- License: MIT License - See https://opensource.org/licenses/MIT for details. -->
   <style>
     body {
-      background-color: blue;
-      color: white;
-      text-align: center;
-      font-family: Arial, sans-serif;
       margin: 0;
       padding: 20px;
       overflow-x: hidden;
       min-width: 320px;
+      transition: background-color 0.3s, color 0.3s;
+      font-family: Arial, sans-serif; /* Fallback font */
+    }
+    body.dark-mode {
+      background-color: #1a1a1a;
+      color: #e0e0e0;
+    }
+    h1 {
+      font-family: "Permanent Marker", cursive;
+      margin: 0 0 10px;
+      transition: color 0.3s;
     }
     #container {
       display: none;
@@ -27,16 +36,22 @@
     }
     canvas {
       border: 2px solid white;
-      max-width: 100% !important;
+      max-width: 100 !important;
       max-height: 100vh !important;
-      width: 100% !important;
+      width: 100 !important;
       height: auto !important;
       display: block;
       object-fit: contain;
+      transition: border-color 0.3s;
+    }
+    body.dark-mode canvas {
+      border-color: #666;
     }
     .gui_pleasewait_title {
       font-size: 24px;
       margin-top: 20px;
+      font-family: "Permanent Marker", cursive;
+      transition: color 0.3s;
     }
     .pleasewait {
       margin-top: 20px;
@@ -81,17 +96,21 @@
       margin-top: 10px;
       font-size: 14px;
       display: none;
+      font-family: "Permanent Marker", cursive;
+      transition: color 0.3s;
     }
     #status {
       max-height: 200px;
       overflow-y: auto;
-      font-family: monospace; /* Improve readability */
+      font-family: "Permanent Marker", cursive;
+      transition: color 0.3s;
     }
     select#console-select {
       margin-top: 10px;
       padding: 5px;
+      font-family: Arial, sans-serif; /* Keep legible */
     }
-    #resize-button, #test-button, #manual-test-button {
+    #resize-button, #test-button, #manual-test-button, #dark-mode-toggle, #map-buttons {
       margin-top: 10px;
       display: none;
       padding: 5px 10px;
@@ -99,9 +118,60 @@
       border: none;
       color: white;
       cursor: pointer;
+      font-family: Arial, sans-serif; /* Keep legible */
     }
-    #resize-button:hover, #test-button:hover, #manual-test-button:hover {
+    body.dark-mode #resize-button,
+    body.dark-mode #test-button,
+    body.dark-mode #manual-test-button,
+    body.dark-mode #dark-mode-toggle,
+    body.dark-mode #map-buttons {
+      background-color: #4a90e2;
+    }
+    #resize-button:hover, #test-button:hover, #manual-test-button:hover, #dark-mode-toggle:hover, #map-buttons:hover {
       background-color: #4169e1;
+    }
+    #mapping-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    #mapping-overlay.active {
+      display: flex;
+    }
+    #mapping-content {
+      padding: 20px;
+      background: #333;
+      border-radius: 5px;
+      text-align: left;
+      font-family: Arial, sans-serif; /* Keep legible */
+    }
+    #mapping-content h2 {
+      font-family: "Permanent Marker", cursive;
+    }
+    #mapping-content button {
+      margin: 5px 0;
+      padding: 5px 10px;
+      background-color: #1e90ff;
+      border: none;
+      color: white;
+      cursor: pointer;
+    }
+    #mapping-content button:hover {
+      background-color: #4169e1;
+    }
+    body.dark-mode #mapping-overlay {
+      background: rgba(26, 26, 26, 0.9);
+    }
+    body.dark-mode #mapping-content {
+      background: #222;
     }
   </style>
 </head>
@@ -123,6 +193,26 @@
   <button id="resize-button">Reset Canvas Size</button>
   <button id="test-button">Test Inputs</button>
   <button id="manual-test-button">Manual Test Input</button>
+  <button id="dark-mode-toggle">Toggle Dark Mode</button>
+  <button id="map-buttons">Map Buttons</button>
+
+  <div id="mapping-overlay">
+    <div id="mapping-content">
+      <h2>Map Buttons for <span id="mapping-console"></span></h2>
+      <button id="map-up">Map Up</button><span id="key-up"></span><br>
+      <button id="map-down">Map Down</button><span id="key-down"></span><br>
+      <button id="map-left">Map Left</button><span id="key-left"></span><br>
+      <button id="map-right">Map Right</button><span id="key-right"></span><br>
+      <button id="map-a">Map A/1</button><span id="key-a"></span><br>
+      <button id="map-b">Map B/2</button><span id="key-b"></span><br>
+      <button id="map-c">Map C (Genesis only)</button><span id="key-c"></span><br>
+      <button id="map-start">Map Start</button><span id="key-start"></span><br>
+      <button id="map-mute">Map Mute</button><span id="key-mute"></span><br>
+      <button id="map-reset">Map Reset</button><span id="key-reset"></span><br>
+      <button id="save-mappings">Save Mappings</button>
+      <button id="cancel-mapping">Cancel</button>
+    </div>
+  </div>
 
   <script>
     var container_width = 640;
@@ -135,6 +225,25 @@
     window.Emulator_running = true;
     var selectedConsole = "genesis"; // Default to Genesis
     var manualTestKey = "a"; // Default key for manual test
+    let keyMappings = {
+      genesis: {
+        "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight",
+        "a": "KeyA", "b": "KeyS", "c": "KeyD", "start": "Enter", "mute": "F9", "reset": "F10"
+      },
+      mastersystem: {
+        "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight",
+        "a": "KeyA", "b": "KeyS", "start": "Enter", "mute": "F9", "reset": "F10"
+      }
+    };
+
+    // Load saved mappings and dark mode from localStorage
+    if (localStorage.getItem("darkMode") === "true") {
+      document.body.classList.add("dark-mode");
+    }
+    const savedMappings = localStorage.getItem("keyMappings");
+    if (savedMappings) {
+      keyMappings = JSON.parse(savedMappings);
+    }
 
     // Predefine Module object for Emulatrix
     if (typeof Module === "undefined") {
@@ -144,46 +253,8 @@
         canvas: document.getElementById("canvas"),
         onRuntimeInitialized: function() {
           updateStatus("Runtime initialized successfully!");
-          // Input event listeners
-          if (canvas.addEventListener) {
-            canvas.addEventListener("keydown", function(e) {
-              const key = e.key.toLowerCase();
-              console.log("Canvas keydown:", key, "code:", e.code, "for", selectedConsole);
-              updateStatus("Keydown detected: " + key + " (code: " + e.code + ")");
-              if (Module._setInput) {
-                const buttonMap = {
-                  ...(selectedConsole === "genesis" && {
-                    "a": 1, // A button
-                    "s": 2, // B button
-                    "d": 3, // C button
-                  }),
-                  ...(selectedConsole === "mastersystem" && {
-                    "a": 1, // Button 1
-                    "s": 2, // Button 2
-                  }),
-                  "enter": 9, // Start
-                  "f9": 10,  // Mute
-                  "f10": 11  // Reset
-                };
-                const button = buttonMap[key];
-                if (button) {
-                  Module._setInput(0, button); // Player 1, set button
-                  updateStatus("Input set: Player 1, Button " + button);
-                }
-              }
-            });
-            canvas.addEventListener("keyup", function(e) {
-              const key = e.key.toLowerCase();
-              console.log("Canvas keyup:", key, "code:", e.code, "for", selectedConsole);
-              updateStatus("Keyup detected: " + key + " (code: " + e.code + ")");
-              if (Module._setInput) {
-                Module._setInput(0, 0); // Reset input
-                updateStatus("Input reset: Player 1");
-              }
-            });
-            canvas.setAttribute("tabindex", "0"); // Make canvas focusable
-            canvas.focus(); // Focus canvas to capture keys
-          }
+          console.log("Available Module functions:", Object.keys(Module)); // Debug input support
+          bindInputListener(); // Bind listener on initialization
         },
         onAbort: function(error) {
           updateStatus("Emulator aborted: " + error);
@@ -204,33 +275,79 @@
         document.getElementById("resize-button").style.display = "inline-block";
         document.getElementById("test-button").style.display = "inline-block";
         document.getElementById("manual-test-button").style.display = "inline-block";
+        document.getElementById("dark-mode-toggle").style.display = "inline-block";
+        document.getElementById("map-buttons").style.display = "inline-block";
         updateControlHint(); // Update hint based on selected console
       }
     }
 
     function updateControlHint() {
       const hintDiv = document.getElementById("controls-hint");
-      switch (selectedConsole) {
-        case "genesis":
-          hintDiv.textContent = "Controls: Arrows to move, A/S/D for A/B/C, Enter for Start, F9 to mute, F10 to reset";
-          break;
-        case "mastersystem":
-          hintDiv.textContent = "Controls: Arrows to move, A for 1, S for 2, Enter for Start, F9 to mute, F10 to reset";
-          break;
-      }
+      const mapping = keyMappings[selectedConsole];
+      hintDiv.textContent = `Controls: ${mapping.up} to move up, ${mapping.down} to move down, ${mapping.left} to move left, ${mapping.right} to move right, ${mapping.a} for A/1, ${mapping.b} for B/2, ${selectedConsole === "genesis" ? `${mapping.c} for C, ` : ""}${mapping.start} for Start, ${mapping.mute} to mute, ${mapping.reset} to reset`;
     }
 
     window.onload = function() {
+      const canvas = document.getElementById("canvas");
+      if (!canvas) updateStatus("Error: Canvas element not found on load");
+      bindInputListener(); // Initial bind
       const consoleSelect = document.getElementById("console-select");
       consoleSelect.addEventListener("change", function() {
         selectedConsole = this.value;
         updateStatus("Switched to " + selectedConsole + " console!");
-        updateControlHint(); // Update hint on console change
+        updateControlHint();
+        updateMappingDisplay();
       });
 
       console.log("Initial Module:", typeof Module, "FS:", typeof FS);
-      updateStatus("Initializing Emulatrix for Sega Genesis and Master System (v1.0)...");
+      updateStatus("Initializing Emulatrix for Sega Genesis and Master System (v1.0.1)...");
     };
+
+    function bindInputListener() {
+      const canvas = document.getElementById("canvas");
+      if (canvas && canvas.removeEventListener) {
+        canvas.removeEventListener("keydown", canvas._keydownListener);
+        canvas.removeEventListener("keyup", canvas._keyupListener);
+      }
+      canvas._keydownListener = function(e) {
+        const key = e.code;
+        console.log("Current mappings:", keyMappings[selectedConsole]);
+        const mapping = keyMappings[selectedConsole];
+        console.log("Canvas keydown:", key, "for", selectedConsole);
+        updateStatus("Keydown detected: " + key);
+        const downEvent = new KeyboardEvent("keydown", { key: key, code: key, bubbles: true });
+        document.dispatchEvent(downEvent);
+        canvas.dispatchEvent(downEvent); // Direct dispatch to canvas
+        const actions = {};
+        actions[mapping.up] = () => updateStatus("Up pressed");
+        actions[mapping.down] = () => updateStatus("Down pressed");
+        actions[mapping.left] = () => updateStatus("Left pressed");
+        actions[mapping.right] = () => updateStatus("Right pressed");
+        actions[mapping.a] = () => updateStatus("A/1 pressed");
+        actions[mapping.b] = () => updateStatus("B/2 pressed");
+        actions[mapping.c || ""] = () => selectedConsole === "genesis" && updateStatus("C pressed");
+        actions[mapping.start] = () => updateStatus("Start pressed");
+        actions[mapping.mute] = () => updateStatus("Mute pressed");
+        actions[mapping.reset] = () => updateStatus("Reset pressed");
+        console.log("Actions check for", key, ":", actions[key] ? "Found" : "Not found");
+        actions[key] && actions[key]();
+        if (["KeyF5", "KeyF6"].includes(key)) e.preventDefault(); // Prevent default F5/F6
+      };
+      canvas._keyupListener = function(e) {
+        const key = e.code;
+        console.log("Canvas keyup:", key, "for", selectedConsole);
+        updateStatus("Keyup detected: " + key);
+        const upEvent = new KeyboardEvent("keyup", { key: key, code: key, bubbles: true });
+        document.dispatchEvent(upEvent);
+        canvas.dispatchEvent(upEvent); // Direct dispatch to canvas
+      };
+      if (canvas) {
+        canvas.addEventListener("keydown", canvas._keydownListener);
+        canvas.addEventListener("keyup", canvas._keyupListener);
+        canvas.setAttribute("tabindex", "0");
+        canvas.focus();
+      }
+    }
 
     document.getElementById("rom-upload").onchange = function(event) {
       const file = event.target.files[0];
@@ -362,7 +479,22 @@
             const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
             Module.callMain(["-v", romPath]);
           } else {
-            updateStatus("callMain not found, attempting auto-start...");
+            updateStatus("callMain not found, attempting auto-start with delay...");
+            setTimeout(() => {
+              if (Module.callMain) Module.callMain(["-v", romPath]);
+              else updateStatus("Auto-start failed: callMain unavailable");
+            }, 2000);
+          }
+          const canvas = document.getElementById("canvas");
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            for (let i = 0; i < 3; i++) {
+              ctx.fillRect(0, 0, 1, 1); // Dummy draw to force context
+              ctx.clearRect(0, 0, 1, 1); // Clear it
+              updateStatus(`Dummy draw attempt ${i + 1} completed`);
+            }
+          } else {
+            updateStatus("Warning: Canvas context not available yet");
           }
           document.querySelector(".gui_pleasewait_title").style.display = "none";
           document.querySelector(".pleasewait").style.display = "none";
@@ -373,7 +505,7 @@
           }, 2000);
           updateStatus("Emulator started! Enjoy " + selectedConsole + "!");
           emulatorStarted = true;
-          loading_Checker = setInterval(loadingChecker, 500);
+          loadingChecker = setInterval(loadingChecker, 500); // Fixed typo
         } catch (err) {
           updateStatus("Error launching emulator: " + err.message);
           setTimeout(function() {
@@ -402,11 +534,28 @@
       try {
         if (typeof Emulator_started !== "undefined" && Emulator_started === true) {
           updateStatus("Emulator running confirmed!");
-          clearInterval(loading_Checker);
+          clearInterval(loadingChecker);
           checkControls();
+          checkContext(); // Check context once
+          if (!contextReady) {
+            setTimeout(checkContext, 2000); // Retry after 2 seconds if not ready
+          }
         }
       } catch (err) {
         updateStatus("Error checking emulator status: " + err.message);
+      }
+    }
+
+    function checkContext() {
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas ? canvas.getContext("2d") : null;
+      console.log("Checking context at", new Date().toISOString(), ":", ctx);
+      if (ctx) {
+        contextReady = true;
+        updateStatus("Canvas context now available!");
+        if (savedState) loadState(); // Auto-load when context is ready
+      } else if (!contextReady) {
+        requestAnimationFrame(checkContext); // Sync with rendering
       }
     }
 
@@ -423,7 +572,21 @@
     }
 
     function isMobileDevice() {
-      return /Mobi|Android/i.test(navigator.userAgent);
+      return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); // Expanded for iPhone
+    }
+
+    function simulateKey(key) {
+      console.log("Simulating key:", key);
+      const downEvent = new KeyboardEvent("keydown", { key: key, code: key.toUpperCase(), bubbles: true });
+      const upEvent = new KeyboardEvent("keyup", { key: key, code: key.toUpperCase(), bubbles: true });
+      document.dispatchEvent(downEvent);
+      canvas.dispatchEvent(downEvent); // Direct dispatch to canvas
+      updateStatus("Touch input simulated: " + key);
+      setTimeout(() => {
+        document.dispatchEvent(upEvent);
+        canvas.dispatchEvent(upEvent); // Direct dispatch to canvas
+        updateStatus("Touch input reset: " + key);
+      }, 300); // Increased delay for iPhone
     }
 
     function testInputs() {
@@ -431,23 +594,25 @@
       console.log("Testing inputs...");
       try {
         const events = [
-          { key: "ArrowUp", desc: "Up" },
-          { key: "ArrowDown", desc: "Down" },
-          { key: "ArrowLeft", desc: "Left" },
-          { key: "ArrowRight", desc: "Right" },
-          { key: selectedConsole === "genesis" ? "KeyA" : "KeyA", desc: "Button 1/A" },
-          { key: selectedConsole === "genesis" ? "KeyS" : "KeyS", desc: "Button 2/B" },
-          { key: selectedConsole === "genesis" ? "KeyD" : "Enter", desc: "Button 3/C or Start" },
-          { key: "F9", desc: "Mute" },
-          { key: "F10", desc: "Reset" },
-          { key: "F5", desc: "Fast-Forward" }
-        ];
+          { key: keyMappings[selectedConsole].up, desc: "Up" },
+          { key: keyMappings[selectedConsole].down, desc: "Down" },
+          { key: keyMappings[selectedConsole].left, desc: "Left" },
+          { key: keyMappings[selectedConsole].right, desc: "Right" },
+          { key: keyMappings[selectedConsole].a, desc: "A/1" },
+          { key: keyMappings[selectedConsole].b, desc: "B/2" },
+          { key: selectedConsole === "genesis" ? keyMappings.genesis.c : "", desc: "C" },
+          { key: keyMappings[selectedConsole].start, desc: "Start" },
+          { key: keyMappings[selectedConsole].mute, desc: "Mute" },
+          { key: keyMappings[selectedConsole].reset, desc: "Reset" }
+        ].filter(event => event.key); // Filter out empty keys
         events.forEach(event => {
-          const downEvent = new KeyboardEvent("keydown", { key: event.key, code: event.key.toUpperCase() });
-          const upEvent = new KeyboardEvent("keyup", { key: event.key, code: event.key.toUpperCase() });
+          const downEvent = new KeyboardEvent("keydown", { key: event.key, code: event.key, bubbles: true });
+          const upEvent = new KeyboardEvent("keyup", { key: event.key, code: event.key, bubbles: true });
           document.dispatchEvent(downEvent);
+          canvas.dispatchEvent(downEvent); // Direct dispatch to canvas
           setTimeout(() => {
             document.dispatchEvent(upEvent);
+            canvas.dispatchEvent(upEvent); // Direct dispatch to canvas
             updateStatus("Tested " + event.desc + " (" + event.key + ")");
           }, 100);
         });
@@ -460,14 +625,17 @@
       updateStatus("Manually testing input for key: " + manualTestKey + " on " + selectedConsole + "...");
       console.log("Manually testing input:", manualTestKey);
       try {
-        const downEvent = new KeyboardEvent("keydown", { key: manualTestKey, code: manualTestKey.toUpperCase() });
-        const upEvent = new KeyboardEvent("keyup", { key: manualTestKey, code: manualTestKey.toUpperCase() });
+        const downEvent = new KeyboardEvent("keydown", { key: manualTestKey, code: manualTestKey.toUpperCase(), bubbles: true });
+        const upEvent = new KeyboardEvent("keyup", { key: manualTestKey, code: manualTestKey.toUpperCase(), bubbles: true });
         document.dispatchEvent(downEvent);
+        canvas.dispatchEvent(downEvent); // Direct dispatch to canvas
+        updateStatus("Dispatched down event for " + manualTestKey);
         setTimeout(() => {
           document.dispatchEvent(upEvent);
+          canvas.dispatchEvent(upEvent); // Direct dispatch to canvas
+          updateStatus("Dispatched up event for " + manualTestKey);
           updateStatus("Tested " + manualTestKey);
         }, 500);
-        // Prompt for next key to test
         manualTestKey = prompt("Enter key to test (e.g., a, s, d, enter, f9, f10):", manualTestKey || "a");
       } catch (err) {
         updateStatus("Error testing manual input: " + err.message);
@@ -487,28 +655,169 @@
       manualTestInput();
     });
 
+    document.getElementById("dark-mode-toggle").addEventListener("click", function() {
+      document.body.classList.toggle("dark-mode");
+      const isDarkMode = document.body.classList.contains("dark-mode");
+      localStorage.setItem("darkMode", isDarkMode);
+      updateStatus("Dark mode " + (isDarkMode ? "enabled" : "disabled"));
+    });
+
+    document.getElementById("map-buttons").addEventListener("click", function() {
+      document.getElementById("mapping-overlay").classList.add("active");
+      document.getElementById("mapping-console").textContent = selectedConsole;
+      updateMappingDisplay();
+    });
+
+    function updateMappingDisplay() {
+      const mapping = keyMappings[selectedConsole];
+      document.getElementById("key-up").textContent = mapping.up;
+      document.getElementById("key-down").textContent = mapping.down;
+      document.getElementById("key-left").textContent = mapping.left;
+      document.getElementById("key-right").textContent = mapping.right;
+      document.getElementById("key-a").textContent = mapping.a;
+      document.getElementById("key-b").textContent = mapping.b;
+      document.getElementById("key-c").textContent = selectedConsole === "genesis" ? mapping.c : "N/A";
+      document.getElementById("key-start").textContent = mapping.start;
+      document.getElementById("key-mute").textContent = mapping.mute;
+      document.getElementById("key-reset").textContent = mapping.reset;
+    }
+
+    const mappingButtons = {
+      "up": document.getElementById("map-up"),
+      "down": document.getElementById("map-down"),
+      "left": document.getElementById("map-left"),
+      "right": document.getElementById("map-right"),
+      "a": document.getElementById("map-a"),
+      "b": document.getElementById("map-b"),
+      "c": document.getElementById("map-c"),
+      "start": document.getElementById("map-start"),
+      "mute": document.getElementById("map-mute"),
+      "reset": document.getElementById("map-reset")
+    };
+
+    Object.keys(mappingButtons).forEach(key => {
+      mappingButtons[key].addEventListener("click", function() {
+        this.textContent = "Press a key...";
+        const listener = (e) => {
+          const newKey = e.code;
+          keyMappings[selectedConsole][key] = newKey;
+          this.textContent = "Map " + key.charAt(0).toUpperCase() + key.slice(1);
+          document.getElementById("key-" + key).textContent = newKey;
+          document.removeEventListener("keydown", listener);
+          updateControlHint();
+          updateMappingDisplay(); // Ensure display updates
+        };
+        document.addEventListener("keydown", listener);
+      });
+    });
+
+    document.getElementById("save-mappings").addEventListener("click", function() {
+      localStorage.setItem("keyMappings", JSON.stringify(keyMappings));
+      updateStatus("Mappings saved for " + selectedConsole);
+      document.getElementById("mapping-overlay").classList.remove("active");
+      updateControlHint();
+      updateConfigWithMappings(); // Update config with new mappings
+      bindInputListener(); // Rebind listener
+    });
+
+    document.getElementById("cancel-mapping").addEventListener("click", function() {
+      document.getElementById("mapping-overlay").classList.remove("active");
+    });
+
+    document.getElementById("load-state-file-button").addEventListener("click", function() {
+      document.getElementById("state-upload").click();
+      this.style.display = "none";
+    });
+
     window.addEventListener("resize", resizeEmulatorCanvas);
     window.addEventListener("focus", function() { Emulator_running = true; });
     window.addEventListener("blur", function() { Emulator_running = false; });
 
     window.onerror = function(msg, url, lineNo, columnNo, error) {
-      updateStatus("Error encountered: " + msg + ". Retrying in 5 seconds...");
-      setTimeout(function() {
-        if (!emulatorStarted) {
-          document.getElementById("canvas").width = container_width;
-          document.getElementById("canvas").height = container_height;
-          if (Module.callMain) {
+      if (msg.includes("emscripten_set_main_loop")) {
+        updateStatus("Error: Main loop conflict detected (" + msg + "). Check console for details. Retrying once...");
+        setTimeout(function() {
+          if (!emulatorStarted && Module.callMain) {
             const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
             Module.callMain(["-v", romPath]);
             updateStatus("Retry successful, emulator relaunched!");
             emulatorStarted = true;
+          } else {
+            updateStatus("Retry failed: Emulator not restarted");
           }
-        }
-      }, 5000);
+        }, 5000);
+      } else {
+        updateStatus("Error encountered: " + msg + ". Retrying in 5 seconds...");
+        setTimeout(function() {
+          if (!emulatorStarted && Module.callMain) {
+            const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
+            Module.callMain(["-v", "romPath"]);
+            updateStatus("Retry successful, emulator relaunched!");
+            emulatorStarted = true;
+          }
+        }, 5000);
+      }
       return true;
     };
+
+    function updateConfigWithMappings() {
+      const mapping = keyMappings[selectedConsole];
+      settings_file = "rgui_browser_directory = /\n";
+      settings_file += `input_player1_up = ${mapping.up.toLowerCase()}\n`;
+      settings_file += `input_player1_down = ${mapping.down.toLowerCase()}\n`;
+      settings_file += `input_player1_left = ${mapping.left.toLowerCase()}\n`;
+      settings_file += `input_player1_right = ${mapping.right.toLowerCase()}\n`;
+      settings_file += `input_player1_a = ${mapping.a.toLowerCase()}\n`;
+      settings_file += `input_player1_b = ${mapping.b.toLowerCase()}\n`;
+      if (selectedConsole === "genesis") {
+        settings_file += `input_player1_y = ${mapping.a.toLowerCase()}\n`; // A
+        settings_file += `input_player1_b = ${mapping.b.toLowerCase()}\n`; // B
+        settings_file += `input_player1_a = ${mapping.c.toLowerCase()}\n`; // C
+      }
+      settings_file += `input_player1_start = ${mapping.start.toLowerCase()}\n`;
+      settings_file += `input_audio_mute = ${mapping.mute.toLowerCase()}\n`;
+      settings_file += `input_reset = ${mapping.reset.toLowerCase()}\n`;
+      settings_file += "video_vsync = true\n";
+      settings_file += "audio_latency = 128\n";
+      settings_file += "video_message_pos_x = -100\n";
+      settings_file += "video_message_pos_y = -100\n";
+      settings_file += "menu_enable_widgets = false\n";
+      if (selectedConsole === "mastersystem") {
+        settings_file += "system_hw = Master System\n";
+      } else if (selectedConsole === "genesis") {
+        settings_file += "system_hw = Mega Drive/Genesis\n";
+      }
+      ["input_save_state", "input_load_state", "input_exit_emulator"].forEach(function(key) {
+        settings_file += key + " = scroll_lock\n";
+      });
+      container_width = document.getElementById("container").offsetWidth || 640;
+      container_height = Math.round((container_width / 4) * 3);
+      settings_file += "custom_viewport_width = " + container_width + "\n";
+      settings_file += "custom_viewport_height = " + container_height + "\n";
+      settings_file += "custom_viewport_x = 0\n";
+      settings_file += "custom_viewport_y = 0\n";
+
+      try {
+        if (typeof FS !== "undefined") {
+          FS.unlink("/home/web_user/retroarch/userdata/retroarch.cfg");
+          FS.createDataFile("/home/web_user/retroarch/userdata", "retroarch.cfg", settings_file, true, true);
+          updateStatus("Configuration updated with new mappings. Please restart the emulator to apply.");
+        }
+      } catch (err) {
+        updateStatus("Error updating config: " + err.message);
+      }
+    }
+
+    function restartEmulator() {
+      if (emulatorStarted && Module.callMain) {
+        emulatorStarted = false;
+        const romPath = "/game." + (selectedConsole === "genesis" ? "bin" : "sms");
+        Module.callMain(["-v", romPath]);
+        updateStatus("Emulator restarted to apply new mappings!");
+      }
+    }
   </script>
   <script src="Emulatrix_SegaGenesis.js"></script>
-  <!-- Version 1.0 - Supports Sega Genesis and Master System. Add Game Gear or other systems with a multi-core update if needed. -->
+  <!-- Version 1.0.1 - Supports Sega Genesis and Master System with dark mode, mappable buttons, and Permanent Marker font. -->
 </body>
 </html>
